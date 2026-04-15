@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from bugfinder.ai.base import RateLimiter
@@ -44,14 +45,37 @@ class HybridAnalyzer:
             self.client = ClaudeClient(api_key=anthropic_api_key, model=model or "claude-3-5-sonnet-latest")
 
     @staticmethod
+    def _normalize_description(description: str) -> str:
+        normalized = description.strip().lower()
+        normalized = re.sub(r"\s+", " ", normalized)
+        normalized = re.sub(r"[`'\".]+", "", normalized)
+        return normalized
+
+    @staticmethod
+    def _semantic_key(issue: AnalysisIssue) -> tuple[str, str, str, int | None, str]:
+        return (
+            issue.issue_type.strip().lower(),
+            issue.severity.strip().lower(),
+            issue.file_path,
+            issue.line,
+            HybridAnalyzer._normalize_description(issue.description),
+        )
+
+    @staticmethod
     def _merge_issues(issues: list[AnalysisIssue]) -> list[AnalysisIssue]:
-        seen = set()
+        seen: dict[tuple[str, str, str, int | None, str], int] = {}
         merged: list[AnalysisIssue] = []
         for issue in issues:
-            k = issue.key()
+            k = HybridAnalyzer._semantic_key(issue)
             if k in seen:
+                existing = merged[seen[k]]
+                # Keep the richest fix metadata when deduplicating near-identical findings.
+                if not existing.fix and issue.fix:
+                    existing.fix = issue.fix
+                if existing.confidence is None and issue.confidence is not None:
+                    existing.confidence = issue.confidence
                 continue
-            seen.add(k)
+            seen[k] = len(merged)
             merged.append(issue)
         return merged
 

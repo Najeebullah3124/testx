@@ -188,6 +188,73 @@ Options:
 - `--include-ext`: only analyze listed extensions (repeatable)
 - `--min-severity`: only include findings at or above threshold
 - `--fail-on-severity`: non-zero exit for CI policy enforcement
+- `--fix`: apply safe auto-fixes for supported issue types
+- `--dry-run`: preview safe fixes without editing files
+- `--retest-command`: post-fix validation command (default `pytest -q`)
+- `--force`: also apply medium-confidence fixes (default applies high only)
+
+## MCP Server Integration
+
+`testx` ships an MCP stdio server so AI clients (Cursor, Claude Desktop, other MCP hosts) can call scan/fix tools directly.
+
+Start command:
+
+```bash
+testx-mcp
+```
+
+Exposed MCP tools:
+
+- `scan_codebase`
+  - runs the analyzer and returns report output (`text/json/html`)
+- `fix_codebase`
+  - runs detect -> safe fix pipeline (supports `dry_run` and `force`)
+  - returns applied/skipped/planned summary and remaining issue count
+
+Example Cursor MCP config snippet:
+
+```json
+{
+  "mcpServers": {
+    "testx": {
+      "command": "testx-mcp"
+    }
+  }
+}
+```
+
+Example Claude Desktop MCP config snippet:
+
+```json
+{
+  "mcpServers": {
+    "testx": {
+      "command": "testx-mcp"
+    }
+  }
+}
+```
+
+### Detect -> suggest -> apply safe fixes -> re-test -> human review
+
+```bash
+# Preview what would be auto-fixed
+testx scan . --ai none --dry-run --output text
+
+# Apply safe fixes, re-run tests, then print remaining issues
+testx scan . --ai none --fix --retest-command "pytest -q" --output text
+
+# Include medium-confidence fixes (for example inferred unused imports)
+testx scan . --ai none --fix --force --retest-command "pytest -q" --output text
+```
+
+Safe auto-fix rules currently include:
+
+- remove `console.log(...)` / `debugger;` lines
+- remove Python `print(...)` debug statements
+- replace bare `except:` with `except Exception:`
+- remove inferred unused single-line imports (medium confidence, requires `--force`)
+- trim trailing whitespace and add missing newline at end of file
 
 ## Output Model
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
 from bugfinder.api import should_fail_ci
 from bugfinder.analyzer.hybrid_analyzer import HybridAnalyzer
 from bugfinder.config import load_config
+from bugfinder.fixer import apply_safe_fixes
 from bugfinder.reporters import render_html, render_json, render_text
 
 
@@ -49,6 +51,26 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["low", "medium", "high"],
         default=None,
         help="Exit with status code 1 when report contains this severity or higher.",
+    )
+    scan.add_argument(
+        "--fix",
+        action="store_true",
+        help="Apply safe auto-fixes for supported issue types.",
+    )
+    scan.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview safe auto-fixes without modifying files.",
+    )
+    scan.add_argument(
+        "--retest-command",
+        default="pytest -q",
+        help="Command to run after applying fixes (default: pytest -q).",
+    )
+    scan.add_argument(
+        "--force",
+        action="store_true",
+        help="Apply medium-confidence fixes in addition to high-confidence fixes.",
     )
     return parser
 
@@ -93,6 +115,41 @@ def main() -> None:
         print(f"Report written to {out_path}")
     else:
         print(rendered)
+
+    if args.fix or args.dry_run:
+        fix_report = apply_safe_fixes(
+            report.issues,
+            root_path=args.path,
+            dry_run=args.dry_run,
+            force=args.force,
+        )
+        mode = "DRY RUN" if args.dry_run else "APPLY"
+        print("\n=== Auto-fix pipeline ===")
+        print(f"Mode: {mode}")
+        print(f"Issues detected: {fix_report.total_issues}")
+        print(f"Suggested fixes available: {fix_report.suggested_fixes}")
+        print(f"Safe fix candidates: {fix_report.safe_fix_candidates}")
+        print(f"Applied fixes: {fix_report.applied_count}")
+        print(f"Skipped for human review/other: {fix_report.skipped_count}")
+
+        if args.fix and fix_report.applied_count > 0:
+            print("\n=== Re-test ===")
+            result = subprocess.run(
+                args.retest_command,
+                shell=True,
+                cwd=Path(args.path).resolve(),
+                check=False,
+            )
+            print(f"Re-test exit code: {result.returncode}")
+
+            report = analyzer.analyze_codebase(
+                args.path,
+                exclude_dirs=exclude_dirs,
+                include_extensions=include_extensions,
+                min_severity=args.min_severity,
+            )
+            print("\n=== Remaining issues for human review ===")
+            print(render_text(report))
 
     if should_fail_ci(report, args.fail_on_severity):
         print(

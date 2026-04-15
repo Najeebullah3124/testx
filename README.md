@@ -271,6 +271,24 @@ twine upload --repository testpypi dist/*
 twine upload dist/*
 ```
 
+### Trusted Publishing with GitHub Actions (recommended)
+
+`textx` includes `.github/workflows/publish.yml` for OIDC-based PyPI publishing.
+
+PyPI Trusted Publisher settings:
+
+- Project name: `textx`
+- Owner: `Najeebullah3124`
+- Repository: `textx`
+- Workflow: `publish.yml`
+- Environment: `pypi`
+
+Workflow behavior:
+
+- triggers automatically when a GitHub Release is published
+- also supports manual run via `workflow_dispatch`
+- builds wheel + sdist, then publishes via `pypa/gh-action-pypi-publish`
+
 ## Security Practices
 
 - never commit secrets or API keys
